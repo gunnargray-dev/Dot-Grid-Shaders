@@ -2,23 +2,23 @@
 using namespace metal;
 
 struct Particle {
-    float2 position;
-    float2 velocity;
-    float life;
+    float2 position;    // Current x,y position of particle
+    float2 velocity;    // Current movement speed and direction
+    float life;         // Opacity/brightness of particle (0.0-1.0)
 };
 
 struct ParticleUniforms {
-    float2 resolution;
-    float time;
-    float2 touchPosition;
-    bool isTouching;
-    float particleSpeed;
-    float particleSize;
-    float sphereSize;
-    float bounceStartTime;
-    float pulseTime;
-    bool isPulsing;
-    float audioReactivity;
+    float2 resolution;      // Screen size
+    float time;            // Current time for animation
+    float2 touchPosition;  // Touch input position
+    bool isTouching;      // Whether screen is being touched
+    float particleSpeed;   // Overall movement speed of particles
+    float particleSize;    // Size of each particle dot
+    float sphereSize;      // Base radius of the sphere
+    float bounceStartTime; // Time when bounce animation started
+    float pulseTime;       // Time control for pulsing effect
+    bool isPulsing;        // Whether pulse effect is active
+    float audioReactivity; // Audio input level (0.0-1.0)
 };
 
 struct VertexOut {
@@ -40,23 +40,32 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     float n = float(id);
     float N = float(particleCount);
     
-    // Optimize spherical calculations
-    float phi = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0) + time * 0.3; // Adjusted speed
-    float cosTheta = 1.0 - (2.0 * n + 1.0) / N;
+    // Initial clustered animation
+    float startupDuration = 2.0;
+    float blendFactor = min(time / startupDuration, 1.0);
+    
+    // Clustered initial state
+    float clusteredPhi = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0);
+    float clusteredTheta = 1.0 - (2.0 * n + 1.0) / N;
+    
+    // Continuous motion with better distribution
+    float continuousPhi = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0) + time * 0.2;
+    // Add some organic motion
+    float wobble = sin(time * 0.5 + n * 0.1) * 0.1;
+    float continuousTheta = 1.0 - (2.0 * n + 1.0) / N + wobble;
+    
+    // Blend between initial clustered state and continuous motion
+    float phi = mix(clusteredPhi, continuousPhi, blendFactor);
+    float cosTheta = mix(clusteredTheta, continuousTheta, blendFactor);
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
     
     float baseRadius = uniforms.sphereSize;
-
-    // Make pulse rate respond to audio level
-    float pulseRate = 0.5 + uniforms.audioReactivity * 8.0; // Higher audio = faster pulse
-    float pulseAmplitude = 0.2 + uniforms.audioReactivity * 0.6; // Higher audio = bigger pulse
-
-    // Apply audio reactivity to the spherical coordinates
-    float audioScale = 1.0 + uniforms.audioReactivity * 2.0;
-    float deformation = sin(phi * 4.0 + time * pulseRate) * pulseAmplitude; // Create wave pattern around sphere
-    float radius = baseRadius * (1.0 + deformation) * audioScale;
-
-    // This will make the surface ripple and deform based on audio
+    
+    // Audio reactive radius
+    float audioScale = 1.0 + uniforms.audioReactivity * 0.3; // 30% expansion at max audio
+    float radius = baseRadius * audioScale;
+    
+    // Calculate sphere position
     float2 spherePos;
     spherePos.x = cos(phi) * sinTheta * radius;
     spherePos.y = sin(phi) * sinTheta * radius;
@@ -70,13 +79,33 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     float2 toTarget = targetPos - particle.position;
     float dist = fast::length(toTarget); // Use fast:: for better performance
     
-    if (dist > 0.01) {
-        float attraction = uniforms.particleSpeed * min(dist * 0.08, 0.5);
-        particle.velocity = particle.velocity * 0.99 + fast::normalize(toTarget) * attraction;
-        particle.position += particle.velocity;
+    // Increase minimum distance threshold and add minimum velocity
+    float minDist = 0.1; // Increased from 0.01
+    float minVelocity = 0.01;
+    
+    if (dist > minDist) {
+        float attraction = uniforms.particleSpeed * min(dist * 0.1, 0.8); // Increased attraction and max speed
+        particle.velocity = particle.velocity * 0.95 + fast::normalize(toTarget) * attraction; // Less dampening
+    } else {
+        // Reset position if particle gets stuck
+        particle.position = targetPos;
+        particle.velocity = float2(0.0);
     }
     
-    particle.life = 0.3 + 0.7 * ((z / baseRadius) * 0.5 + 0.5);
+    // Ensure minimum movement
+    if (fast::length(particle.velocity) < minVelocity) {
+        particle.velocity = fast::normalize(toTarget) * minVelocity;
+    }
+    
+    particle.position += particle.velocity;
+    
+    // Base life calculation from z-position
+    float baseLife = 0.3 + 0.7 * ((z / baseRadius) * 0.5 + 0.5);
+    
+    // Add audio reactivity to brightness
+    float audioBoost = uniforms.audioReactivity * 0.7; // Scale audio effect (0.0 to 0.7)
+    particle.life = min(baseLife + audioBoost, 1.0); // Clamp to maximum of 1.0
+    
     particles[id] = particle;
 }
 

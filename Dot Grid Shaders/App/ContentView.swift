@@ -20,9 +20,12 @@ struct ContentView: View {
                     particleSize: particleSize,
                     particleCount: Int(particleCount),
                     sphereSize: sphereSize,
-                    isAudioEnabled: $isAudioEnabled
+                    isAudioEnabled: .constant(true) // Always enabled
                 )
                 .environmentObject(audioProcessor)
+                .onAppear {
+                    audioProcessor.startMonitoring()
+                }
                 .onDisappear {
                     audioProcessor.stopMonitoring()
                 }
@@ -30,53 +33,12 @@ struct ContentView: View {
             }
 
             VStack {
-                Spacer()
-
-                // Settings button
-                Button(action: { isShowingSheet = true }) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(
-                            Circle()
-                                .fill(Color(.sRGB, red: 0.2, green: 0.2, blue: 0.2, opacity: 0.8))
-                                .shadow(color: .black.opacity(0.2), radius: 5)
-                        )
-                }
-                .padding(.bottom, 20)
-
-                // Audio toggle
-                Toggle("Audio Reactive", isOn: $isAudioEnabled)
-                    .padding()
-                    .background(Color(.sRGB, red: 0.2, green: 0.2, blue: 0.2, opacity: 0.8))
-                    .cornerRadius(10)
-                    .padding(.bottom)
-                    .onChange(of: isAudioEnabled) { _, newValue in
-                        if newValue {
-                            audioProcessor.startMonitoring()
-                        } else {
-                            audioProcessor.stopMonitoring()
-                        }
-                    }
-
                 // Audio level
                 Text("Audio Level: \(String(format: "%.2f", audioProcessor.currentDecibels))")
                     .foregroundColor(.white)
                 Text("Audio Scale: \(String(format: "%.2f", 1.0 + audioProcessor.currentDecibels * 4.0))")
                     .foregroundColor(.white)
             }
-        }
-        .sheet(isPresented: $isShowingSheet) {
-            ParametersSheet(
-                animationSpeed: $animationSpeed,
-                isPlaying: $isPlaying,
-                particleSize: $particleSize,
-                particleCount: $particleCount,
-                sphereSize: $sphereSize
-            )
-            .presentationDetents([.fraction(0.5)])
-            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.dark)
     }
