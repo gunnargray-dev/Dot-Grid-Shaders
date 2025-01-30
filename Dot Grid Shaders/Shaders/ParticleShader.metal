@@ -45,21 +45,24 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     float blendFactor = min(time / startupDuration, 1.0);
     
     // Initial state - particles start from center
-    float initialRadius = uniforms.sphereSize * 0.1; // Start at 10% of final size
-    float baseRotation = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0) + time * 0.2; // Consistent rotation
+    float initialRadius = uniforms.sphereSize * 0.1;
     
-    // Clustered initial state
-    float clusteredPhi = baseRotation;
-    float clusteredTheta = 1.0 - (2.0 * n + 1.0) / N;
+    // Single consistent rotation calculation for both states
+    float rotationSpeed = 0.3;
+    float constantRotation = -time * rotationSpeed; // Negative to match initialization direction
+    float distributionAngle = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0);
+    float phi = distributionAngle + constantRotation;
+    
+    // Initial clustered state (tighter clustering at center)
+    float clusteredTheta = (1.0 - (2.0 * n + 1.0) / N) * 0.2;
     
     // Continuous motion with better distribution
-    float continuousPhi = baseRotation; // Use same rotation as initial state
     float wobble = sin(time * 0.5 + n * 0.1) * 0.1;
     float continuousTheta = 1.0 - (2.0 * n + 1.0) / N + wobble;
     
-    // Blend between initial clustered state and continuous motion
-    float phi = mix(clusteredPhi, continuousPhi, blendFactor);
-    float cosTheta = mix(clusteredTheta, continuousTheta, blendFactor);
+    // More dramatic blend between states
+    float easeOutFactor = 1.0 - pow(1.0 - blendFactor, 3.0); // Cubic ease out
+    float cosTheta = mix(clusteredTheta, continuousTheta, easeOutFactor);
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
     
     float baseRadius = uniforms.sphereSize;
@@ -103,12 +106,18 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     
     particle.position += particle.velocity;
     
-    // Base life calculation from z-position
-    float baseLife = 0.3 + 0.7 * ((z / baseRadius) * 0.5 + 0.5);
+    // Base life calculation from z-position with more contrast
+    float zNormalized = (z / baseRadius) * 0.5 + 0.5;
+    float baseLife = 0.2 + 0.8 * pow(zNormalized, 2.0); // More contrast in base brightness
     
-    // Add audio reactivity to brightness
-    float audioBoost = uniforms.audioReactivity * 0.7; // Scale audio effect (0.0 to 0.7)
-    particle.life = min(baseLife + audioBoost, 1.0); // Clamp to maximum of 1.0
+    // Add enhanced audio reactivity to brightness
+    float audioBoost = uniforms.audioReactivity * 0.9; // Increased audio effect
+    float audioModulation = sin(phi * 2.0 + time) * 0.3; // Add variation based on position
+    float brightnessMod = audioBoost * (1.0 + audioModulation); // Modulate audio effect
+    
+    // Combine base brightness with audio reactivity
+    float finalBrightness = baseLife + brightnessMod;
+    particle.life = clamp(finalBrightness, 0.1, 1.0); // Ensure minimum brightness
     
     particles[id] = particle;
 }

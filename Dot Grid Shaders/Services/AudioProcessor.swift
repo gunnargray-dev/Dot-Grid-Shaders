@@ -66,35 +66,33 @@ class AudioProcessor: ObservableObject {
     private func setupAudioProcessing() {
         let format = inputNode.outputFormat(forBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, _ in
-            guard let self = self,
-                  !self.isShuttingDown else { return }
+        // Install tap on input node
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self = self else { return }
 
-            self.queue.async {
-                // Add debug print
-                print("Processing audio buffer: \(buffer.frameLength) frames")
+            let channelData = buffer.floatChannelData?[0]
+            let frames = buffer.frameLength
 
-                guard let channelData = buffer.floatChannelData?[0] else { return }
-                let samples = Array(UnsafeBufferPointer(start: channelData,
-                                                        count: Int(buffer.frameLength)))
+            var sum: Float = 0
+            for frame in 0 ..< frames {
+                let sample = channelData![Int(frame)]
+                sum += sample * sample
+            }
 
-                let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(buffer.frameLength))
-                var db: Float = -160
-                if rms > 0 {
-                    db = 20 * log10(rms)
-                }
+            // Calculate decibels with adjusted threshold
+            let rms = sqrt(sum / Float(frames))
+            let minDb: Float = -60 // Increased minimum threshold to filter more background noise
+            let maxDb: Float = -10 // Kept max the same
 
-                db = max(min(db, 0), -60)
-                let normalizedDb = (db + 60) / 60
+            var db = 20 * log10(rms)
+            db = max(db, minDb)
+            db = min(db, maxDb)
 
-                // Add debug print
-                print("Current dB: \(db), Normalized: \(normalizedDb)")
+            // Normalize with adjusted range
+            let normalizedValue = (db - minDb) / (maxDb - minDb)
 
-                DispatchQueue.main.async {
-                    if !self.isShuttingDown {
-                        self.currentDecibels = normalizedDb
-                    }
-                }
+            DispatchQueue.main.async {
+                self.currentDecibels = normalizedValue
             }
         }
     }
