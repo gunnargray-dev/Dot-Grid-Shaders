@@ -44,13 +44,16 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     float startupDuration = 2.0;
     float blendFactor = min(time / startupDuration, 1.0);
     
+    // Initial state - particles start from center
+    float initialRadius = uniforms.sphereSize * 0.1; // Start at 10% of final size
+    float baseRotation = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0) + time * 0.2; // Consistent rotation
+    
     // Clustered initial state
-    float clusteredPhi = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0);
+    float clusteredPhi = baseRotation;
     float clusteredTheta = 1.0 - (2.0 * n + 1.0) / N;
     
     // Continuous motion with better distribution
-    float continuousPhi = 2.0 * M_PI_F * fmod(n * 0.618034, 1.0) + time * 0.2;
-    // Add some organic motion
+    float continuousPhi = baseRotation; // Use same rotation as initial state
     float wobble = sin(time * 0.5 + n * 0.1) * 0.1;
     float continuousTheta = 1.0 - (2.0 * n + 1.0) / N + wobble;
     
@@ -61,9 +64,10 @@ void particleCompute(device Particle *particles [[buffer(0)]],
     
     float baseRadius = uniforms.sphereSize;
     
-    // Audio reactive radius
+    // Blend radius from initial to final size with audio reactivity
     float audioScale = 1.0 + uniforms.audioReactivity * 0.3; // 30% expansion at max audio
-    float radius = baseRadius * audioScale;
+    float targetRadius = baseRadius * audioScale;
+    float radius = mix(initialRadius, targetRadius, blendFactor);
     
     // Calculate sphere position
     float2 spherePos;
